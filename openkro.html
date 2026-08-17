@@ -1,0 +1,315 @@
+<title>CloudWeb Ship Log</title>
+<style>
+  /* ---- tokens: light is the base, both dark states redefine only these ---- */
+  :root {
+    --ground:      #EFF2F4;
+    --surface:     #FFFFFF;
+    --surface-alt: #F6F8F9;
+    --ink:         #12171D;
+    --ink-soft:    #47535F;
+    --ink-faint:   #77848F;
+    --rule:        #DCE2E6;
+    --rule-strong: #C3CCD2;
+    --accent:      #0F4C5C;
+    --accent-soft: #E2EDF0;
+    --good:        #1B6F52;
+    --good-soft:   #E1F0E9;
+    --warn:        #8C5A0C;
+    --warn-soft:   #F7EBD8;
+    --bad:         #9E2A21;
+    --bad-soft:    #F7E3E1;
+    --shadow:      0 1px 2px rgba(18,23,29,.05), 0 8px 24px -16px rgba(18,23,29,.25);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #0D1116;
+      --surface:     #151B22;
+      --surface-alt: #1B222B;
+      --ink:         #E4EAEF;
+      --ink-soft:    #A3B0BB;
+      --ink-faint:   #74838F;
+      --rule:        #263039;
+      --rule-strong: #35424D;
+      --accent:      #63BACD;
+      --accent-soft: #16323B;
+      --good:        #62C39B;
+      --good-soft:   #14312703;
+      --good-soft:   #143127;
+      --warn:        #D9A455;
+      --warn-soft:   #33270F;
+      --bad:         #E0796E;
+      --bad-soft:    #351A17;
+      --shadow:      0 1px 2px rgba(0,0,0,.3), 0 8px 24px -16px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:      #0D1116;
+    --surface:     #151B22;
+    --surface-alt: #1B222B;
+    --ink:         #E4EAEF;
+    --ink-soft:    #A3B0BB;
+    --ink-faint:   #74838F;
+    --rule:        #263039;
+    --rule-strong: #35424D;
+    --accent:      #63BACD;
+    --accent-soft: #16323B;
+    --good:        #62C39B;
+    --good-soft:   #143127;
+    --warn:        #D9A455;
+    --warn-soft:   #33270F;
+    --bad:         #E0796E;
+    --bad-soft:    #351A17;
+    --shadow:      0 1px 2px rgba(0,0,0,.3), 0 8px 24px -16px rgba(0,0,0,.7);
+  }
+
+  --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 60rem; margin: 0 auto; padding: 3.5rem 1.5rem 6rem; }
+
+  /* ---- masthead ---- */
+  .masthead { border-bottom: 2px solid var(--ink); padding-bottom: 1.5rem; margin-bottom: 2.5rem; }
+  .kicker {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: .7rem; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 .9rem;
+    display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: baseline;
+  }
+  h1 {
+    font-family: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-weight: 600; font-size: clamp(2.1rem, 5.5vw, 3.1rem);
+    line-height: 1.08; letter-spacing: -.015em; text-wrap: balance;
+    margin: 0 0 .7rem;
+  }
+  .standfirst {
+    font-size: 1.075rem; color: var(--ink-soft); max-width: 62ch; margin: 0;
+    text-wrap: pretty;
+  }
+
+  /* ---- section scaffolding ---- */
+  section { margin-top: 3.25rem; }
+  .sec-head { display: flex; align-items: baseline; gap: .85rem; border-bottom: 1px solid var(--rule-strong); padding-bottom: .5rem; margin-bottom: 1.4rem; }
+  .sec-head h2 {
+    font-family: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 1.42rem; font-weight: 600; letter-spacing: -.01em; margin: 0; flex: 1;
+  }
+  .sec-tag {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint);
+    white-space: nowrap;
+  }
+  p { margin: 0 0 1.05rem; max-width: 68ch; text-wrap: pretty; }
+  p:last-child { margin-bottom: 0; }
+
+  /* ---- headline status strip ---- */
+  .strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; }
+  .cell { background: var(--surface); padding: 1rem 1.1rem; }
+  .cell .lab {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: .64rem; letter-spacing: .11em; text-transform: uppercase; color: var(--ink-faint); display: block; margin-bottom: .4rem;
+  }
+  .cell .val { font-size: 1.5rem; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .cell .sub { font-size: .78rem; color: var(--ink-faint); margin-top: .15rem; }
+  .val.good { color: var(--good); }
+
+  /* ---- the incident callout ---- */
+  .incident { background: var(--surface); border: 1px solid var(--rule); border-left: 3px solid var(--accent); border-radius: 3px; padding: 1.35rem 1.5rem; box-shadow: var(--shadow); }
+  .chain { list-style: none; margin: 1.1rem 0 0; padding: 0; display: grid; gap: .55rem; }
+  .chain li { display: grid; grid-template-columns: auto 1fr; gap: .7rem; align-items: start; font-size: .93rem; }
+  .chain .mark {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: .78rem; color: var(--ink-faint); padding-top: .12rem; white-space: nowrap;
+  }
+
+  /* ---- tables ---- */
+  .tscroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 3px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: .89rem; min-width: 30rem; }
+  thead th {
+    text-align: left; font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: .64rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint);
+    padding: .7rem .9rem; border-bottom: 1px solid var(--rule-strong); background: var(--surface-alt); white-space: nowrap;
+  }
+  tbody td { padding: .68rem .9rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  code, .mono {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: .84em; background: var(--surface-alt); border: 1px solid var(--rule);
+    padding: .08em .38em; border-radius: 2px; white-space: nowrap;
+  }
+  td code { background: none; border: 0; padding: 0; color: var(--accent); }
+
+  .pill {
+    display: inline-block; font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: .66rem; letter-spacing: .05em; text-transform: uppercase;
+    padding: .16rem .5rem; border-radius: 2px; white-space: nowrap;
+  }
+  .pill.good { background: var(--good-soft); color: var(--good); }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .pill.bad  { background: var(--bad-soft);  color: var(--bad); }
+
+  /* ---- ordered blockers: numbering is real here, these happened in sequence ---- */
+  ol.blockers { list-style: none; counter-reset: b; margin: 0; padding: 0; display: grid; gap: .8rem; }
+  ol.blockers li {
+    counter-increment: b; background: var(--surface); border: 1px solid var(--rule); border-radius: 3px;
+    padding: .95rem 1.1rem .95rem 3.1rem; position: relative; font-size: .93rem;
+  }
+  ol.blockers li::before {
+    content: counter(b); position: absolute; left: 1.05rem; top: .95rem;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    font-size: .8rem; font-weight: 600; color: var(--accent);
+  }
+  ol.blockers b { font-weight: 600; }
+  ol.blockers .fix { display: block; color: var(--ink-soft); font-size: .88rem; margin-top: .2rem; }
+
+  /* ---- open items ---- */
+  ul.open { list-style: none; margin: 0; padding: 0; display: grid; gap: .7rem; }
+  ul.open li {
+    display: grid; grid-template-columns: auto 1fr; gap: .8rem; align-items: start;
+    border-bottom: 1px dotted var(--rule-strong); padding-bottom: .7rem; font-size: .93rem;
+  }
+  ul.open li:last-child { border-bottom: 0; }
+
+  .note { font-size: .87rem; color: var(--ink-soft); border-left: 2px solid var(--rule-strong); padding-left: .9rem; margin: 1.2rem 0 0; }
+
+  footer { margin-top: 4rem; padding-top: 1.2rem; border-top: 1px solid var(--rule-strong); font-size: .82rem; color: var(--ink-faint); }
+
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:focus-visible, li:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="kicker"><span>CloudWeb LMS</span><span>15 August 2026</span><span>6 commits → main</span></p>
+    <h1>Production was down all week. It wasn&rsquo;t a bug.</h1>
+    <p class="standfirst">Library uploads and downloads had been failing with opaque 500s. The cause turned out to be a credential Google had been quietly expiring every seven days — so the same outage had been recurring, and every previous fix had been a reset of the same clock. Today it got fixed permanently, and the app got faster on the way out.</p>
+  </header>
+
+  <section aria-labelledby="s-status">
+    <div class="sec-head">
+      <h2 id="s-status">Where things stand</h2>
+      <span class="sec-tag">verified against production</span>
+    </div>
+    <div class="strip">
+      <div class="cell"><span class="lab">Library files</span><span class="val good">200</span><div class="sub">was 500 on every file</div></div>
+      <div class="cell"><span class="lab">API routes</span><span class="val good">25 / 25</span><div class="sub">all three roles, 2xx</div></div>
+      <div class="cell"><span class="lab">Upload round-trip</span><span class="val good">Pass</span><div class="sub">201 → bytes match → 204</div></div>
+      <div class="cell"><span class="lab">Token expiry</span><span class="val good">None</span><div class="sub">was every 7 days</div></div>
+      <div class="cell"><span class="lab">C: free space</span><span class="val">105 <span style="font-size:.9rem;font-weight:500">GB</span></span><div class="sub">was 0 bytes</div></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-incident">
+    <div class="sec-head">
+      <h2 id="s-incident">The actual fault</h2>
+      <span class="sec-tag">root cause</span>
+    </div>
+    <div class="incident">
+      <p>Your OAuth consent screen was in <b>&ldquo;Testing&rdquo;</b> status. Google force-expires refresh tokens for apps in that state every seven days. The Worker held a dead token, so every Drive call failed — and because the client caught it as a generic error, it surfaced to users as <em>&ldquo;Please try again&rdquo;</em>, advice that could never work, since the credential was expired rather than flaky.</p>
+      <ul class="chain">
+        <li><span class="mark">SYMPTOM</span><span>Library uploads failed; &ldquo;Couldn&rsquo;t save Doc for offline viewing&rdquo;; downloads 500</span></li>
+        <li><span class="mark">MECHANISM</span><span>Offline-save fetches the file through <code>/library/:id/file</code> before encrypting it — no bytes, nothing to save</span></li>
+        <li><span class="mark">FIX 1</span><span>Minted a fresh refresh token and set it in the Cloudflare dashboard <span class="pill good">live</span></span></li>
+        <li><span class="mark">FIX 2</span><span>Published the OAuth consent screen to production, removing the 7-day clock <span class="pill good">live</span></span></li>
+      </ul>
+      <p class="note">The first fix alone would have bought seven days. The second is what stops it recurring — worth knowing if this ever looks familiar again.</p>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-shipped">
+    <div class="sec-head">
+      <h2 id="s-shipped">Shipped to main</h2>
+      <span class="sec-tag">6 commits</span>
+    </div>
+    <div class="tscroll">
+      <table>
+        <thead><tr><th>Commit</th><th>Change</th><th>Why it mattered</th></tr></thead>
+        <tbody>
+          <tr><td><code>4145cbd</code></td><td>Auth-context hydration fix</td><td>Server and client rendered different trees; the dashboard flashed a loading state on every warm start</td></tr>
+          <tr><td><code>910529b</code></td><td>Lazy-load dashboard charts</td><td>Recharts was blocking first paint for everyone, including users who never scrolled to a chart</td></tr>
+          <tr><td><code>3a152f7</code></td><td>Rebuild all three APKs</td><td>Shipped binaries predated every fix above</td></tr>
+          <tr><td><code>eb013a8</code></td><td>Skeleton loading state</td><td>42 screens across three apps; replaces a spinner that only ever flashed</td></tr>
+          <tr><td><code>5201fc8</code></td><td>Rebuild APKs</td><td>Carry the skeleton into the binaries</td></tr>
+          <tr><td><code>0142d0b</code></td><td>API preconnect + Worker logging</td><td>Cold-start handshake cost, and production having no logs at all</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-perf">
+    <div class="sec-head">
+      <h2 id="s-perf">Performance — measured first</h2>
+      <span class="sec-tag">numbers, not guesses</span>
+    </div>
+    <p>Before changing anything I measured where the time actually goes. Two of the three suspects turned out to be already fine, which is worth stating plainly rather than shipping busywork against them.</p>
+    <div class="tscroll">
+      <table>
+        <thead><tr><th>Measured</th><th>Result</th><th class="num">Verdict</th></tr></thead>
+        <tbody>
+          <tr><td>API latency, 12 endpoints</td><td>137–253&nbsp;ms median</td><td class="num"><span class="pill good">healthy</span></td></tr>
+          <tr><td>Page data fetching</td><td>Every page already uses <code>Promise.all</code></td><td class="num"><span class="pill good">no waterfall</span></td></tr>
+          <tr><td>Fonts</td><td>Self-hosted, bundled as woff2</td><td class="num"><span class="pill good">optimal</span></td></tr>
+          <tr><td>Login bundle</td><td>640&nbsp;KB, of which 224&nbsp;KB is react-dom</td><td class="num"><span class="pill warn">near floor</span></td></tr>
+          <tr><td>Dashboard eager JS</td><td>1036&nbsp;KB → 660&nbsp;KB</td><td class="num"><span class="pill good">−36%</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:1.2rem">The bundle is close to the floor for React&nbsp;19 + Next&nbsp;16, and inside an APK the JavaScript is local anyway — download time is zero, only parse time counts. So the remaining lever was <em>perceived</em> speed, which is what the skeletons and the preconnect address. The one genuine raw win was the chart lazy-load.</p>
+    <div class="tscroll" style="margin-top:1.2rem">
+      <table>
+        <thead><tr><th>APK</th><th class="num">Before</th><th class="num">Now</th><th class="num">Δ</th></tr></thead>
+        <tbody>
+          <tr><td>Admin</td><td class="num">7.86 MB</td><td class="num">5.42 MB</td><td class="num"><span class="pill good">−31%</span></td></tr>
+          <tr><td>Student</td><td class="num">8.19 MB</td><td class="num">5.74 MB</td><td class="num"><span class="pill good">−30%</span></td></tr>
+          <tr><td>Teacher</td><td class="num">7.62 MB</td><td class="num">5.17 MB</td><td class="num"><span class="pill good">−32%</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-blockers">
+    <div class="sec-head">
+      <h2 id="s-blockers">Build blockers cleared</h2>
+      <span class="sec-tag">in order hit</span>
+    </div>
+    <p>The APK build failed four times before producing anything. Each failure hid the next, so they could only be found one at a time.</p>
+    <ol class="blockers">
+      <li><b>A stray static server held a file lock</b><span class="fix">My own preview process kept <code>out/</code> open — Next failed with <code>ENOTEMPTY</code>. Killed it; now killed routinely before every build.</span></li>
+      <li><b>Node 20 vs Capacitor 8</b><span class="fix">Capacitor CLI 8.4.2 needs Node ≥&nbsp;22; your default is 20.19.5. Builds now run against your installed 24.16.0 via <code>PATH</code> — your global default is untouched.</span></li>
+      <li><b>C: drive completely full</b><span class="fix">Zero bytes free of 277&nbsp;GB. Gradle cannot unpack into nothing.</span></li>
+      <li><b>Gradle cache on the wrong drive</b><span class="fix">Moved the workspace and <code>GRADLE_USER_HOME</code> to D:. Cold build took 28&nbsp;min; warm builds now take 2&nbsp;s.</span></li>
+    </ol>
+    <p class="note">Disk: cleared ~4&nbsp;GB of npm cache and temp files. The remaining space came from your end — worth knowing that <b>Steam accounts for 107&nbsp;GB</b> on C:, and Steam can move a library to D: without re-downloading.</p>
+  </section>
+
+  <section aria-labelledby="s-open">
+    <div class="sec-head">
+      <h2 id="s-open">Still open</h2>
+      <span class="sec-tag">needs you</span>
+    </div>
+    <ul class="open">
+      <li><span class="pill warn">deploy</span><span><b>Worker logging isn&rsquo;t live yet.</b> The <code>[observability]</code> block is committed, but it only takes effect on the next <code>wrangler deploy</code>. Until then production still emits no logs — which is exactly why this week&rsquo;s outage had to be diagnosed by probing from outside.</span></li>
+      <li><span class="pill bad">security</span><span><b>Admin credentials are public.</b> <code>parth</code> / <code>parth@lms</code> is readable in <code>docs/deployment.md</code> on GitHub. Rotating the password is the fix; removing the line alone won&rsquo;t help, since git history keeps it.</span></li>
+      <li><span class="pill warn">decision</span><span><b>Late quiz submissions discard answers entirely.</b> A student who runs out of time loses their work rather than having it graded as-is. Fixing it needs your call on grading policy, not a code decision.</span></li>
+      <li><span class="pill warn">hygiene</span><span><b>Your local folder is stale.</b> <code>D:\claude-project</code> is roughly 60 files behind GitHub, including two D1 migrations. Everything today was built from a fresh clone — build from one, not that copy.</span></li>
+      <li><span class="pill warn">untested</span><span><b>No device test, no proctoring test.</b> Nothing was connected over ADB, and the quiz camera flow needs a real camera and a live attempt. Worth a manual pass before students touch it.</span></li>
+    </ul>
+  </section>
+
+  <footer>
+    Every claim here was checked against live production rather than inferred from the build: APKs were reopened to confirm they carry the production APIS URL, GitHub copies were checksum-matched against local builds, and the upload test created a real file, verified the bytes round-tripped, then deleted it and confirmed it was gone.
+  </footer>
+
+</div>
