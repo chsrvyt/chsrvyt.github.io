@@ -20,7 +20,7 @@ const jetbrains = JetBrains_Mono({
   weight: ["400", "500"],
 });
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://sarveshchonde.dev";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://chsrvyt.github.io";
 
 const title = "Sarvesh Chonde | Cybersecurity • AI • Full-Stack Developer";
 const description =
@@ -54,6 +54,13 @@ export const metadata: Metadata = {
     title,
     description,
     locale: "en_IN",
+    /*
+     * No `images` entry here on purpose. app/opengraph-image.png is a static
+     * metadata file, so Next emits the og:image tag itself — and because the
+     * asset has a real extension, GitHub Pages serves it as image/png. The
+     * generated (.tsx ImageResponse) form emitted an extensionless URL, which
+     * Pages serves as application/octet-stream and scrapers reject.
+     */
   },
   twitter: {
     card: "summary_large_image",
@@ -80,14 +87,47 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     /*
-     * `js-anim` is set statically rather than by an inline script: under the
-     * nonce CSP in middleware.ts a hand-written inline <script> would need the
-     * nonce threaded through, which forces the whole tree dynamic. The
-     * <noscript> block below is the JS-disabled escape hatch — without it,
-     * every [data-anim] element would stay at opacity 0 forever.
+     * `js-anim` is set statically rather than by an inline script, and the
+     * <noscript> block is the JS-disabled escape hatch — without it every
+     * [data-anim] element would stay at opacity 0 forever.
      */
     <html lang="en" className={`js-anim ${inter.variable} ${jetbrains.variable}`}>
       <head>
+        {/*
+         * CSP as a <meta>, because GitHub Pages cannot set response headers.
+         *
+         * This is a real downgrade from the nonce-based policy a Node host
+         * allowed, and it is worth naming rather than glossing:
+         *
+         *   - `script-src` needs 'unsafe-inline'. A static export has no
+         *     request to attach a nonce to, and Next emits inline bootstrap
+         *     scripts. Hashing them would break on every rebuild.
+         *   - `frame-ancestors` is ignored in meta CSP and cannot be set here
+         *     at all, so clickjacking protection depends on whatever
+         *     X-Frame-Options GitHub Pages happens to send.
+         *   - HSTS and Permissions-Policy are headers only. Not available.
+         *
+         * What remains is still worth having: a closed default-src, no
+         * object-src, a locked base-uri and form-action, and an explicit
+         * allow-list for the only third-party origins this site talks to.
+         */}
+        <meta
+          httpEquiv="Content-Security-Policy"
+          content={[
+            "default-src 'self'",
+            "base-uri 'self'",
+            "object-src 'none'",
+            "script-src 'self' 'unsafe-inline'",
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data: blob: https://opengraph.githubassets.com https://avatars.githubusercontent.com https://raw.githubusercontent.com",
+            "font-src 'self' data:",
+            // The browser reads public GitHub data directly on this host.
+            "connect-src 'self' https://api.github.com",
+            "form-action 'self'",
+            "frame-src 'none'",
+            "upgrade-insecure-requests",
+          ].join("; ")}
+        />
         <noscript>
           <style>{`[data-anim],[data-anim-hidden]{opacity:1!important;transform:none!important}`}</style>
         </noscript>

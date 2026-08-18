@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRef, useState } from "react";
+import { useLiveData } from "@/components/github/LiveDataProvider";
 import { PreviewImage } from "@/components/projects/PreviewImage";
 import { ActionLink } from "@/components/ui/ActionLink";
 import { RelativeTime } from "@/components/ui/RelativeTime";
@@ -24,7 +25,10 @@ import { cn } from "@/lib/utils/cn";
  * Every field shown is GitHub's: title, description, language, topics, stars,
  * push timestamp and links. `STACK`/`STATUS` are derived, never authored.
  */
-export function StickyShowcase({ projects }: { projects: PortfolioProject[] }) {
+export function StickyShowcase() {
+  // Flagship set is derived from live data, so promoting a repo in
+  // data/featured.ts and pushing it takes effect on the next refresh.
+  const { flagship: projects } = useLiveData();
   const sectionRef = useRef<HTMLElement>(null);
   const [active, setActive] = useState(0);
 

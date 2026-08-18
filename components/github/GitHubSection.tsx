@@ -3,17 +3,13 @@
 import { useRef } from "react";
 import { ActivityTimeline } from "@/components/github/ActivityTimeline";
 import { GitHubStatus } from "@/components/github/GitHubStatus";
+import { useLiveData } from "@/components/github/LiveDataProvider";
 import { RelativeTime } from "@/components/ui/RelativeTime";
 import { Section } from "@/components/ui/Section";
 import { useGsap } from "@/lib/animations/context";
 import { countUp } from "@/lib/animations/scroll";
 import { STATUS_LABELS } from "@/lib/github/normalize";
-import type {
-  GitHubActivity,
-  GitHubStats,
-  PortfolioProject,
-  SyncMeta,
-} from "@/lib/github/types";
+import type { GitHubActivity } from "@/lib/github/types";
 import { formatYear } from "@/lib/utils/format";
 
 /**
@@ -26,17 +22,14 @@ import { formatYear } from "@/lib/utils/format";
  * The final value is also rendered server-side, so the number is correct in
  * the HTML before any JavaScript runs.
  */
-export function GitHubSection({
-  stats,
-  activity,
-  currentFocus,
-  meta,
-}: {
-  stats: GitHubStats | null;
-  activity: GitHubActivity[];
-  currentFocus: PortfolioProject | null;
-  meta: SyncMeta;
-}) {
+export function GitHubSection({ activity }: { activity: GitHubActivity[] }) {
+  /*
+   * Stats and current focus come from the shared live provider. Commit
+   * activity stays a build-time prop: refreshing it costs one request per
+   * repository, which is not a sensible spend against a per-visitor rate
+   * limit for content that changes far more slowly than the repo list.
+   */
+  const { stats, currentFocus } = useLiveData();
   const statsRef = useRef<HTMLDListElement>(null);
 
   useGsap(
@@ -57,9 +50,9 @@ export function GitHubSection({
       title="A profile that updates itself."
       intro={
         <>
-          Repositories, commits and statistics are read from the GitHub REST API
-          server-side, normalised, cached, and revalidated. Nothing on this page
-          is hand-maintained.
+          Repositories, commits and statistics come from the GitHub REST API —
+          baked into this page at build time, then re-read by your browser.
+          Nothing here is hand-maintained.
         </>
       }
       align="wide"
@@ -81,7 +74,7 @@ export function GitHubSection({
             <Stat label="Followers" value={stats?.followers ?? 0} />
           </dl>
 
-          <GitHubStatus initialMeta={meta} />
+          <GitHubStatus />
 
           {/* ---------------- currently building ---------------- */}
           <div data-anim="up" className="hairline pt-6">

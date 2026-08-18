@@ -1,0 +1,75 @@
+name: Build and deploy to GitHub Pages
+
+# The site is a static export, so "live GitHub data" has two halves:
+#
+#   1. This workflow rebuilds the HTML with fresh API data — on every push, on
+#      a schedule, and on demand. It is what replaces the ISR + webhook setup a
+#      Node host would have used.
+#   2. The browser re-reads api.github.com after load (lib/github/browser.ts),
+#      which covers the gap between rebuilds.
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Every 6 hours. GitHub skips cron on repos with no activity for 60 days,
+    # so a genuinely dormant profile stops rebuilding — which is correct, since
+    # there would be nothing new to bake in.
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it — a half-deployed
+# static site is worse than a slightly stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build static export
+        env:
+          # The automatic Actions token is enough to read public repos, and
+          # lifts the build off the 60/hour unauthenticated ceiling. It is used
+          # only during `next build` and never reaches the client bundle.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT_PUBLIC_SITE_URL: https://chsrvyt.github.io
+        run: npm run build
+
+      - name: Verify the export is servable
+        run: |
+          test -f out/index.html || { echo "::error::out/index.html missing"; exit 1; }
+          # Without .nojekyll, Pages runs Jekyll, which ignores directories
+          # beginning with an underscore — i.e. all of /_next. The site would
+          # deploy and then render completely unstyled.
+          test -f out/.nojekyll || { echo "::error::out/.nojekyll missing"; exit 1; }
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

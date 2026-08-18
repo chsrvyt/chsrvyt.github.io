@@ -208,7 +208,14 @@ export interface TechnologyGroup {
    whether it is looking at live data, cached data, or nothing at all.
    =========================================================================== */
 
-export type DataSource = "live" | "cache";
+/**
+ * Where the data on screen came from.
+ *
+ *   build — baked into the HTML by the last static build
+ *   live  — the browser re-read api.github.com successfully just now
+ *   cache — a live re-read was attempted and failed; build-time data stands
+ */
+export type DataSource = "live" | "cache" | "build";
 
 export interface SyncMeta {
   source: DataSource;

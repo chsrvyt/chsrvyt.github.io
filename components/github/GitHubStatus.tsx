@@ -1,100 +1,45 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useLiveData } from "@/components/github/LiveDataProvider";
 import { RelativeTime } from "@/components/ui/RelativeTime";
-import type { ApiEnvelope, GitHubStats, SyncMeta } from "@/lib/github/types";
 
 /**
  * Live connection indicator.
  *
- * The dot reflects the outcome of an actual fetch, nothing else. Three states:
+ * Reports the outcome of a real fetch, never a decorative light. Three states,
+ * matching `SyncMeta.source`:
  *
- *   CONNECTED   the last fetch reached GitHub — `syncedAt` is when
- *   CACHED      GitHub was unreachable, and this says so plainly
- *   CHECKING    a refresh is in flight
- *
- * There is no decorative "online" state. If the API is down the component
- * reports it rather than showing a green light over stale numbers.
+ *   build — the page is showing data baked in by the last rebuild, and the
+ *           timestamp is the build time. Shown for the first couple of seconds
+ *           and to anyone whose browser cannot reach GitHub in time.
+ *   live  — the browser re-read api.github.com successfully; the timestamp is
+ *           when that happened.
+ *   cache — a re-read was attempted and failed. Says so, and keeps the build
+ *           timestamp rather than pretending a sync occurred.
  */
-export function GitHubStatus({ initialMeta }: { initialMeta: SyncMeta }) {
-  const [meta, setMeta] = useState(initialMeta);
-  const [checking, setChecking] = useState(false);
+export function GitHubStatus() {
+  const { meta } = useLiveData();
 
-  useEffect(() => {
-    const controller = new AbortController();
+  const tone = meta.degraded
+    ? { dot: "border border-warn bg-transparent", text: "text-warn" }
+    : meta.source === "live"
+      ? { dot: "bg-signal", text: "text-signal" }
+      : { dot: "bg-pulse", text: "text-pulse" };
 
-    const poll = async () => {
-      setChecking(true);
-      try {
-        const response = await fetch("/api/github/stats", {
-          signal: controller.signal,
-          headers: { Accept: "application/json" },
-        });
-
-        if (!response.ok) {
-          // The route answered but could not serve data — that is degraded.
-          setMeta((current) => ({
-            ...current,
-            source: "cache",
-            degraded: true,
-            reason: `Internal API responded ${response.status}`,
-          }));
-          return;
-        }
-
-        const payload = (await response.json()) as ApiEnvelope<GitHubStats>;
-        setMeta(payload.meta);
-      } catch (error) {
-        if ((error as Error).name === "AbortError") return;
-        setMeta((current) => ({
-          ...current,
-          source: "cache",
-          degraded: true,
-          reason: "Network request failed",
-        }));
-      } finally {
-        setChecking(false);
-      }
-    };
-
-    const id = window.setInterval(poll, 90_000);
-    return () => {
-      controller.abort();
-      window.clearInterval(id);
-    };
-  }, []);
-
-  const connected = !meta.degraded;
+  const label = meta.degraded
+    ? "GitHub temporarily unavailable"
+    : meta.source === "live"
+      ? "GitHub connected"
+      : "Synced at build";
 
   return (
-    <div
-      data-anim="right"
-      className="glass flex flex-col gap-5 p-6"
-      aria-live="polite"
-    >
+    <div data-anim="right" className="glass flex flex-col gap-5 p-6" aria-live="polite">
       <div className="flex items-center gap-2.5">
+        <span aria-hidden="true" className={`h-2 w-2 rounded-full ${tone.dot}`} />
         <span
-          aria-hidden="true"
-          className={[
-            "h-2 w-2 rounded-full",
-            checking
-              ? "bg-pulse animate-pulse"
-              : connected
-                ? "bg-signal"
-                : "border border-warn bg-transparent",
-          ].join(" ")}
-        />
-        <span
-          className={[
-            "font-mono text-[0.66rem] uppercase tracking-[0.18em]",
-            connected ? "text-signal" : "text-warn",
-          ].join(" ")}
+          className={`font-mono text-[0.66rem] uppercase tracking-[0.18em] ${tone.text}`}
         >
-          {checking
-            ? "Checking GitHub…"
-            : connected
-              ? "GitHub connected"
-              : "GitHub temporarily unavailable"}
+          {label}
         </span>
       </div>
 
@@ -113,12 +58,12 @@ export function GitHubStatus({ initialMeta }: { initialMeta: SyncMeta }) {
             Data source
           </dt>
           <dd className="mt-1 font-mono text-[0.72rem] text-bone">
-            {connected ? "GitHub REST API" : "Local cache"}
+            {meta.degraded ? "Build-time snapshot" : "GitHub REST API"}
           </dd>
         </div>
       </dl>
 
-      {!connected ? (
+      {meta.degraded ? (
         <p className="border-t border-chalk/8 pt-4 font-mono text-[0.6rem] uppercase leading-relaxed tracking-[0.14em] text-warn/80">
           Showing cached data
         </p>

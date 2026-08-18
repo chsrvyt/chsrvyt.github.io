@@ -1,13 +1,47 @@
 # SRV.DEV — Sarvesh Chonde
 
-A live developer portfolio. Project data is read from the GitHub REST API at
-request time, normalised, cached and revalidated — there is no hardcoded list of
-projects anywhere in this repository. Creating a repo, editing its description
-or pushing a commit changes the site.
+A live developer portfolio. Project data comes from the GitHub REST API — there
+is no hardcoded list of projects anywhere in this repository. Creating a repo,
+editing its description or pushing a commit changes the site.
 
 ```
-Next.js 15 (App Router) · React 19 · TypeScript · Tailwind CSS v4 · GSAP + ScrollTrigger
+Next.js 15 (static export) · React 19 · TypeScript · Tailwind CSS v4 · GSAP + ScrollTrigger
 ```
+
+Deployed to GitHub Pages at **https://chsrvyt.github.io/**
+
+---
+
+## How it stays live on a static host
+
+GitHub Pages serves files, not a Node process. "Live data" therefore has two
+halves, and neither is decorative:
+
+```
+   BUILD TIME                          RUNTIME (the visitor's browser)
+   ──────────                          ──────────────────────────────
+   next build reads the GitHub API     lib/github/browser.ts re-reads
+   and bakes real repos, commits       api.github.com directly and
+   and counts into the HTML            replaces the baked-in data
+        |                                       |
+        +- crawlers and first paint get         +- a repo created since the
+        |  real content, never a spinner        |  last rebuild still appears
+        |                                       |
+   .github/workflows/deploy.yml            LiveDataProvider owns this;
+   reruns it on push, every 6h,            components never fetch for
+   and on demand                           themselves
+```
+
+The browser can call GitHub directly because the REST API sends
+`Access-Control-Allow-Origin: *` for public, unauthenticated reads.
+
+**No token is ever shipped to the client.** A token in client-side code is a
+published token. That caps the runtime refresh at GitHub's unauthenticated
+limit — but that limit is *per visitor IP*, not per site, and the refresh costs
+two requests every 15 minutes, so no visitor comes close to it.
+
+`GITHUB_TOKEN` is used only during `next build`, where it lifts the build off
+the 60/hour ceiling. In CI, Actions supplies it automatically.
 
 ---
 
@@ -21,231 +55,211 @@ npm install
 npm run dev
 ```
 
-Then open <http://localhost:3000>.
+| Script              | Does                                                       |
+| ------------------- | ---------------------------------------------------------- |
+| `npm run dev`       | Dev server on :3000                                        |
+| `npm run build`     | Typechecks, builds, exports to `out/`, verifies the export  |
+| `npm run typecheck` | `tsc --noEmit`                                              |
 
-| Script              | Does                                     |
-| ------------------- | ---------------------------------------- |
-| `npm run dev`       | Dev server                               |
-| `npm run build`     | Production build (also typechecks)       |
-| `npm start`         | Serve the production build               |
-| `npm run typecheck` | `tsc --noEmit`                           |
+To serve the real export locally:
+
+```bash
+python -m http.server 4173 --directory out
+```
 
 ### Environment
 
-Copy `.env.example` to `.env.local`. Every variable is server-only — none are
-`NEXT_PUBLIC_`-prefixed, so none reach the client bundle.
+Copy `.env.example` to `.env.local`.
 
-| Variable                | Required | Purpose                                                                                            |
-| ----------------------- | -------- | -------------------------------------------------------------------------------------------------- |
-| `GITHUB_TOKEN`          | No*      | Raises the GitHub rate limit from **60/hour** (per IP) to **5,000/hour**. A fine-grained token with **no scopes** is enough — this only reads public data. |
-| `GITHUB_WEBHOOK_SECRET` | No       | Shared secret for `/api/github/webhook`. **Unset means the webhook rejects everything** (fail closed). |
-| `NEXT_PUBLIC_SITE_URL`  | No       | Canonical origin for metadata, OpenGraph and the sitemap.                                          |
+| Variable               | Required | Purpose                                                            |
+| ---------------------- | -------- | ------------------------------------------------------------------ |
+| `GITHUB_TOKEN`         | No*      | Build-time only. Raises the API ceiling from 60/hour to 5,000/hour. |
+| `NEXT_PUBLIC_SITE_URL` | No       | Canonical origin for metadata, OpenGraph and the sitemap.          |
 
-\* Not required, but recommended. Without it the site works and degrades
-gracefully, but a busy day can exhaust 60 requests/hour and push the UI into its
-cached state.
+\* Without it the build still works and degrades gracefully, but a build that
+reads ~30 endpoints can exhaust 60 requests/hour on a shared IP.
 
 ---
 
-## How the GitHub integration works
+## Deploying
+
+The workflow is already committed. One manual step is required, once:
+
+> **Repo → Settings → Pages → Build and deployment → Source → GitHub Actions**
+
+Until that is switched, Pages keeps serving from a branch and will render this
+README instead of the site.
+
+After that, `.github/workflows/deploy.yml` handles everything: it builds, asserts
+the export is servable, and deploys. It runs on push to `main`, every 6 hours,
+and on demand via **Actions → Build and deploy to GitHub Pages → Run workflow**.
+
+### Two things that silently break a Pages deploy
+
+1. **`public/.nojekyll` must exist.** Without it Pages runs Jekyll, Jekyll
+   ignores every directory beginning with an underscore, and the entire
+   `_next` bundle disappears. The deploy "succeeds" and the site renders as
+   unstyled HTML. `scripts/postbuild.mjs` fails the build if it is missing.
+
+2. **`trailingSlash: true` is load-bearing.** It emits
+   `projects/<slug>/index.html` rather than `projects/<slug>.html`. Pages
+   resolves directory URLs reliably; extensionless file resolution is not
+   something to depend on.
+
+The OpenGraph card is a static `app/opengraph-image.png` rather than a generated
+`opengraph-image.tsx`, for the same class of reason: the generated form emits an
+extensionless URL, and on Pages the extension *is* the content type, so scrapers
+were served `application/octet-stream` and rejected it.
+
+---
+
+## The GitHub layer
 
 ```
-GitHub REST API
-      ↓
-lib/github/client.ts        auth, timeout, retry, rate-limit accounting
-      ↓
-lib/github/normalize.ts     raw payloads → portfolio types, categorisation
-      ↓
-lib/cache/store.ts          TTL cache, single-flight, stale-on-failure
-      ↓
-app/api/github/*            internal JSON endpoints (validated, rate-limited)
-      ↓
-React
+lib/github/
+  client.ts        build-time fetch: auth, timeout, retry, rate-limit accounting
+  browser.ts       runtime fetch: unauthenticated, CORS, two requests
+  normalize.ts     raw payloads -> portfolio types
+  categorize.ts    heuristic classification
+  aggregate.ts     pure stats + selectors, shared by BOTH paths
+  activity.ts      commit history (see below)
+  readme.ts        per-repo README for case studies
 ```
 
-No React component ever calls `api.github.com`. The token could not leak into
-the browser even by accident — `lib/github/client.ts` throws if it is imported
-in a client context.
-
-### Endpoints
-
-| Route                    | Returns                                                     |
-| ------------------------ | ----------------------------------------------------------- |
-| `GET /api/github/profile` | Normalised public profile                                   |
-| `GET /api/github/repos`   | All surfaced repositories. Optional `category`, `tier`, `q`, `limit` — each validated against a whitelist |
-| `GET /api/github/activity`| Recent commits across the most recently pushed repositories |
-| `GET /api/github/stats`   | Aggregate counts and language distribution                  |
-| `POST /api/github/webhook`| Signature-verified cache invalidation                       |
-
-Every read response is an envelope:
-
-```jsonc
-{
-  "data": [ /* … */ ],
-  "meta": {
-    "source": "live",              // or "cache"
-    "syncedAt": "2026-08-17T…",    // when GitHub was actually reached
-    "degraded": false              // true ⇒ GitHub was unreachable
-  }
-}
-```
-
-`meta.degraded` is what drives the connection indicator in the UI. **There is no
-decorative "online" state** — if GitHub cannot be reached, the page says
-"GitHub temporarily unavailable · showing cached data" and the timestamp shows
-when the data was really fetched.
+`aggregate.ts` exists specifically so the build path and the browser path apply
+*identical* filtering, ranking and aggregation. Two implementations would drift,
+and the drift would show up as numbers changing when the client refresh lands.
 
 ### Activity: why commits, not events
 
 The obvious source for "latest activity" is `/users/{user}/events/public`. It is
-the wrong one. GitHub has trimmed PushEvent payloads for this account down to:
+the wrong one. GitHub has trimmed PushEvent payloads for this account to:
 
 ```json
-{ "repository_id": …, "push_id": …, "ref": …, "head": …, "before": … }
+{ "repository_id": 0, "push_id": 0, "ref": "", "head": "", "before": "" }
 ```
 
-No `commits` array, no `size`. An events-based timeline can therefore report
-*that* a push happened but not what was in it. The events feed also only retains
-~90 days.
+No `commits` array. An events-based timeline can report *that* a push happened
+but not what was in it — which is the interesting part. The feed also only
+retains ~90 days.
 
-`lib/github/activity.ts` instead reads `/repos/{owner}/{repo}/commits` for the
-five most recently pushed repositories, which yields real commit subjects, real
-timestamps and a real permalink per commit. That costs 5 requests per refresh,
-which is why its cache TTL is the longest of the four (10 minutes ≈ 30
-requests/hour, comfortably inside the unauthenticated ceiling).
+`lib/github/activity.ts` reads `/repos/{owner}/{repo}/commits` for the five most
+recently pushed repositories instead: real commit subjects, real timestamps, a
+real permalink each. It is build-time only — refreshing it costs one request per
+repository, which is not a sensible spend against a per-visitor rate limit for
+content that changes far more slowly than the repo list.
 
-### Repository status is derived, never declared
+### Status is derived, never declared
 
 `deriveStatus()` in `lib/github/normalize.ts`:
 
 | Condition            | Label              |
 | -------------------- | ------------------ |
 | `archived` flag      | `ARCHIVED`         |
-| pushed ≤ 14 days ago | `ACTIVE`           |
-| pushed ≤ 60 days ago | `RECENTLY UPDATED` |
+| pushed <= 14 days    | `ACTIVE`           |
+| pushed <= 60 days    | `RECENTLY UPDATED` |
 | otherwise            | `STABLE`           |
 
-A repository that has been quiet for months cannot display as `ACTIVE`.
+A repository quiet for months cannot display as `ACTIVE`.
 
-### Webhook (optional)
+### The connection indicator is not decoration
 
-Without it, data still refreshes — the TTL cache expires within minutes. The
-webhook just makes updates immediate.
+`SyncMeta.source` has three states and the UI shows the real one:
 
-On GitHub → repository → Settings → Webhooks:
-
-- **Payload URL** — `https://<your-domain>/api/github/webhook`
-- **Content type** — `application/json`
-- **Secret** — the same value as `GITHUB_WEBHOOK_SECRET`
-- **Events** — push, create, delete, repository, release, public
-
-```
-PUSH → signature verification → event validation → cache invalidation → revalidation
-```
-
-Signatures are compared with `timingSafeEqual`. A plain `===` on the hex digest
-leaks the correct prefix length through timing.
+- `build` — showing data baked in by the last rebuild; timestamp is the build
+- `live` — the browser re-read GitHub successfully; timestamp is that moment
+- `cache` — a re-read was attempted and failed. It says
+  "GitHub temporarily unavailable · showing cached data" and **keeps the build
+  timestamp**, rather than claiming a sync that did not happen.
 
 ---
 
 ## The local override layer
 
-GitHub owns the facts. Two files own the things GitHub cannot know:
+GitHub owns the facts. Two files own what GitHub cannot know:
 
 - **`data/profile.ts`** — name, education, links, certifications, section copy.
-  Nothing in this file may assert a metric, an employer or an award.
-- **`data/featured.ts`** — which repositories are flagship, their display names,
-  accent colours, and category overrides for cases the classifier gets wrong.
-  An entry naming a repository that does not exist is **silently ignored**, so a
-  renamed repo degrades to absent rather than to a ghost card.
-
-Flagship projects appear in the sticky showcase in the order they are listed in
-`data/featured.ts` — that ordering is editorial, not a function of star count.
+  Nothing here may assert a metric, an employer or an award.
+- **`data/featured.ts`** — which repos are flagship, display names, accent
+  colours, category overrides. An entry naming a repo that does not exist is
+  **silently ignored**, so a renamed repo degrades to absent, never to a ghost
+  card. Flagship order is the array order — that is editorial, not a function
+  of star count.
 
 ### Certifications
 
-Only add entries you can evidence. Leave `credentialUrl` as `null` when you
-have no public verification link — the UI then renders no "Verify" affordance,
-rather than a dead one. Do not invent credential IDs or issue dates.
+Leave `credentialUrl` as `null` when there is no public verification link; the
+UI then renders no "Verify" affordance rather than a dead one. Do not invent
+credential IDs or dates.
 
 ---
 
 ## Animation
 
 Everything lives in `lib/animations/`. Components declare intent through data
-attributes; they never build timelines inline.
+attributes and never build timelines inline.
 
-| File            | Owns                                                        |
-| --------------- | ----------------------------------------------------------- |
-| `registry.ts`   | Plugin registration, shared durations and easings            |
-| `context.ts`    | `useGsap` — scoped `gsap.context` with automatic revert       |
-| `hero.ts`       | The intro timeline, pointer parallax, scroll exit            |
-| `scroll.ts`     | Batched `[data-anim]` reveals, nav compaction, counters      |
-| `projects.ts`   | Sticky showcase scrub, card hover, grid staging              |
-| `text.ts`       | Line splitting and masked line reveals                       |
-| `transitions.ts`| Boot sequence and route content entrance                     |
-| `magnetic.ts`   | Pointer attraction for controls (capped at 8px)              |
+| File             | Owns                                                    |
+| ---------------- | ------------------------------------------------------- |
+| `registry.ts`    | Plugin registration, shared durations and easings        |
+| `context.ts`     | `useGsap` — scoped `gsap.context` with automatic revert  |
+| `hero.ts`        | Intro timeline, pointer parallax, scroll exit            |
+| `scroll.ts`      | Batched `[data-anim]` reveals, nav compaction, counters  |
+| `projects.ts`    | Sticky showcase scrub, card hover, grid staging          |
+| `text.ts`        | Line splitting and masked line reveals                   |
+| `transitions.ts` | Boot sequence and route content entrance                 |
+| `magnetic.ts`    | Pointer attraction for controls (capped at 8px)          |
 
-Two things worth knowing before editing:
+Two things to know before editing:
 
 1. **`useGsap` reverts on unmount.** Every animation is built inside a scoped
-   `gsap.context`. Without that, route changes leave orphaned ScrollTriggers
+   `gsap.context`. Without it, route changes leave orphaned ScrollTriggers
    firing against detached nodes.
-
 2. **`[data-anim]` is revealed by one batched pass** in `MotionProvider`, which
-   re-runs on every route change. `globals.css` hides `[data-anim]` while
-   `.js-anim` is set, so an element the batch never sees stays invisible
-   forever. If you add a reveal target, use `data-anim` — do not invent a new
-   attribute unless you also animate it.
+   re-runs on every route change. `globals.css` hides `[data-anim]` under
+   `.js-anim`, so an element the batch never sees stays invisible forever. Use
+   `data-anim` — do not invent a new attribute unless you also animate it.
 
 ### Reduced motion
 
-`prefers-reduced-motion: reduce` is honoured at three levels: CSS neutralises
+`prefers-reduced-motion: reduce` is honoured three ways: CSS neutralises
 transitions, `useGsap` passes `reduced: true` so timelines resolve to their end
-state, and the boot sequence, parallax, magnetic buttons, card tilt, custom
-cursor and the looping security-diagram packet are skipped entirely.
+state, and the boot sequence, parallax, magnetics, card tilt, custom cursor and
+the looping security-diagram packet are skipped entirely.
 
 ---
 
 ## Security
 
-The site is meant to demonstrate the thing it talks about.
+Hosting on Pages costs real security controls. Naming them beats pretending
+otherwise:
 
-- **Nonce-based CSP** (`middleware.ts`). A fresh nonce per request with
-  `'strict-dynamic'`, so `script-src` never needs `'unsafe-inline'`.
-  `style-src` retains `'unsafe-inline'` for server-rendered style attributes;
-  GSAP mutates styles through the CSSOM, which CSP does not govern.
-- **Security headers** (`next.config.ts`) — HSTS, `nosniff`, `frame-ancestors
-  'none'`, a closed `Permissions-Policy`, `X-Frame-Options: DENY`.
-- **Server-only secrets.** `lib/github/client.ts` throws if imported client-side.
-- **Signed webhooks**, verified in constant time, failing closed.
-- **Input validation.** Query parameters are whitelisted; unrecognised values
-  are dropped, never echoed back.
-- **Rate limiting** on every internal route.
-- **Safe external links** — `rel="noopener noreferrer"` throughout, and
-  repository `homepage` values are parsed and rejected unless `http(s)`.
-- **README rendering** (`components/ui/Markdown.tsx`) emits React elements and
-  never an HTML string, so markup embedded in a third-party README cannot
-  execute. Link hrefs are additionally restricted to `http`, `https`, `mailto`.
+**Lost by moving off a Node host**
 
----
+- Nonce-based CSP. A static export has no per-request nonce, so `script-src`
+  needs `'unsafe-inline'` for Next's bootstrap scripts.
+- `frame-ancestors`, HSTS, `Permissions-Policy`, `X-Frame-Options` — all
+  response headers, and Pages does not let you set them.
+- The server-side API proxy that kept the token off the wire and put one shared
+  cache in front of GitHub.
 
-## Deploying
+**Still in place**
 
-This app needs a Node runtime. It uses middleware, route handlers, ISR and
-server-side rendering, so **it cannot be hosted on GitHub Pages or any other
-static-file host** — `next export` would drop the middleware, the API layer and
-the revalidation that make the portfolio live.
+- A `<meta>` CSP with a closed `default-src`, `object-src 'none'`, locked
+  `base-uri` and `form-action`, and an explicit allow-list of the only
+  third-party origins the site contacts.
+- No token in the client bundle, by construction — the runtime path is
+  deliberately unauthenticated.
+- Safe external links (`rel="noopener noreferrer"` throughout) and repository
+  `homepage` values parsed and rejected unless `http(s)`.
+- `components/ui/Markdown.tsx` renders third-party READMEs by emitting React
+  elements, never an HTML string, so embedded markup cannot execute. Link hrefs
+  are restricted to `http`, `https`, `mailto`.
 
-Vercel is the path of least resistance:
-
-1. Import the repository.
-2. Add `GITHUB_TOKEN`, `NEXT_PUBLIC_SITE_URL`, and `GITHUB_WEBHOOK_SECRET` if
-   you are using the webhook.
-3. Deploy.
-
-Any Node host works — Netlify, Render, Fly, a container — as long as it runs
-`next build && next start`.
+If any of that matters more than the hosting convenience, deploying to Vercel or
+any Node host restores all of it — revert `output: "export"` and reinstate
+`middleware.ts` and `app/api/`, both of which are in this repository's git
+history.
 
 ---
 
@@ -253,22 +267,23 @@ Any Node host works — Netlify, Render, Fly, a container — as long as it runs
 
 ```
 app/
-  api/github/        internal endpoints + webhook
-  projects/[slug]/   case-study route
-  layout.tsx         fonts, metadata, shell
+  projects/[slug]/   case-study route, one per public repo
+  layout.tsx         fonts, metadata, meta CSP, shell
   page.tsx           the single-page composition
 components/
-  motion/            MotionProvider — boot state, global reveals, magnetics
+  github/            LiveDataProvider - owns "what GitHub currently says"
+  motion/            MotionProvider - boot state, global reveals, magnetics
   preloader/  navigation/  hero/  about/
-  projects/   github/      stack/  security/  contact/  footer/  ui/
+  projects/   stack/  security/  contact/  footer/  ui/
 lib/
   animations/        the GSAP system
-  github/            client, normalisation, categorisation, aggregation
-  cache/             TTL cache with stale-on-failure
-  security/          webhook verification, rate limiting
-  api/  utils/
+  github/            build-time + browser clients, normalisation, aggregation
+  cache/             TTL cache with stale-on-failure (build-time dedupe)
+  utils/
 data/
   profile.ts         identity
   featured.ts        curation + overrides
   sections.ts        the page spine (nav and progress rail read from this)
+scripts/
+  postbuild.mjs      asserts the export is actually servable
 ```

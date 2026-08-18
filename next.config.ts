@@ -1,78 +1,60 @@
 import type { NextConfig } from "next";
 
 /**
- * Response headers applied to every route.
+ * Static export, targeted at GitHub Pages (chsrvyt.github.io).
  *
- * Content-Security-Policy is deliberately NOT set here — it is emitted
- * per-request from `middleware.ts` so each response carries a fresh nonce.
- * A static CSP in this file would have to fall back to `'unsafe-inline'`
- * for Next's hydration scripts, which defeats most of the point.
+ * Pages serves files, not a Node process. That rules out middleware, route
+ * handlers and ISR, so those are gone — see README for what replaced them:
+ *
+ *   nonce CSP (middleware)   → static CSP via <meta> in app/layout.tsx
+ *   /api/github/* proxy      → the browser calls api.github.com directly
+ *                              (lib/github/browser.ts); GitHub's REST API
+ *                              sends permissive CORS headers for public data
+ *   ISR revalidate           → data baked at build time, refreshed by a
+ *                              scheduled GitHub Actions rebuild
+ *   webhook cache-bust       → workflow_dispatch + cron in the same workflow
+ *
+ * The site is still genuinely live: the build bakes current data into the HTML
+ * (good for SEO and first paint) and the client re-reads GitHub on load, so a
+ * repo created between rebuilds still shows up.
  */
-const securityHeaders = [
-  { key: "X-Content-Type-Options", value: "nosniff" },
-  { key: "X-Frame-Options", value: "DENY" },
-  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  { key: "X-DNS-Prefetch-Control", value: "on" },
-  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
-  { key: "Origin-Agent-Cluster", value: "?1" },
-  {
-    key: "Permissions-Policy",
-    value: [
-      "accelerometer=()",
-      "camera=()",
-      "geolocation=()",
-      "gyroscope=()",
-      "magnetometer=()",
-      "microphone=()",
-      "payment=()",
-      "usb=()",
-      "interest-cohort=()",
-    ].join(", "),
-  },
-  {
-    key: "Strict-Transport-Security",
-    value: "max-age=63072000; includeSubDomains; preload",
-  },
-];
-
 const nextConfig: NextConfig = {
-  reactStrictMode: true,
+  output: "export",
 
-  // Never ship the source path of the framework in responses.
+  /*
+   * Emits `projects/<slug>/index.html` rather than `projects/<slug>.html`.
+   * Pages resolves directory URLs reliably; extensionless file resolution is
+   * not something to depend on.
+   */
+  trailingSlash: true,
+
+  reactStrictMode: true,
   poweredByHeader: false,
 
   images: {
-    // Only GitHub-hosted avatars/assets are ever rendered through next/image.
+    /*
+     * Required: the optimizer is a server route and cannot exist in an export.
+     * Remote images are loaded directly by the browser instead.
+     */
+    unoptimized: true,
     remotePatterns: [
       { protocol: "https", hostname: "avatars.githubusercontent.com" },
       { protocol: "https", hostname: "raw.githubusercontent.com" },
       { protocol: "https", hostname: "opengraph.githubassets.com" },
     ],
-    formats: ["image/avif", "image/webp"],
   },
 
   experimental: {
-    // Trim the client bundle: only the icons/utilities actually imported
-    // survive tree-shaking from these packages.
     optimizePackageImports: ["framer-motion"],
   },
 
-  async headers() {
-    return [
-      {
-        source: "/:path*",
-        headers: securityHeaders,
-      },
-      {
-        // The webhook must never be cached by any intermediary.
-        source: "/api/github/webhook",
-        headers: [
-          { key: "Cache-Control", value: "no-store, max-age=0" },
-          ...securityHeaders,
-        ],
-      },
-    ];
-  },
+  /*
+   * No `headers()` here. Response headers are the host's job, and GitHub Pages
+   * does not let you set them — HSTS, X-Frame-Options and Permissions-Policy
+   * are simply unavailable on this host. What can be expressed in a <meta>
+   * CSP is applied in app/layout.tsx; the rest is a documented cost of
+   * choosing Pages over a Node host.
+   */
 };
 
 export default nextConfig;

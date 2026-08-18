@@ -12,7 +12,12 @@ import { STATUS_LABELS, slugify } from "@/lib/github/normalize";
 import { CATEGORY_LABELS } from "@/lib/github/types";
 import { compactNumber, formatDate } from "@/lib/utils/format";
 
-export const revalidate = 300;
+/*
+ * A static export cannot render a path it was not told about, so every project
+ * route is enumerated below and `dynamicParams` is off: a slug that is not in
+ * the list is a 404, not an on-demand render.
+ */
+export const dynamicParams = false;
 
 /**
  * Case-study route.
@@ -25,8 +30,17 @@ export const revalidate = 300;
  */
 
 export async function generateStaticParams() {
-  // Pre-render the curated set; everything else renders on demand.
-  return featured.map((entry) => ({ slug: slugify(entry.repo) }));
+  try {
+    const repos = await getRepositories();
+    return repos.value.map((project) => ({ slug: project.slug }));
+  } catch {
+    /*
+     * GitHub unreachable at build time. Fall back to the curated set so the
+     * flagship case studies still exist — a build that silently ships zero
+     * project pages is worse than one that ships five.
+     */
+    return featured.map((entry) => ({ slug: slugify(entry.repo) }));
+  }
 }
 
 async function loadProject(slug: string) {

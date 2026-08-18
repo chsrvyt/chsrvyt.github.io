@@ -2,6 +2,7 @@ import { profile } from "@/data/profile";
 import { About } from "@/components/about/About";
 import { Contact } from "@/components/contact/Contact";
 import { GitHubSection } from "@/components/github/GitHubSection";
+import { LiveDataProvider } from "@/components/github/LiveDataProvider";
 import { Hero } from "@/components/hero/Hero";
 import { SectionProgress } from "@/components/navigation/SectionProgress";
 import { ProjectExplorer } from "@/components/projects/ProjectExplorer";
@@ -11,35 +12,36 @@ import { TechStack } from "@/components/stack/TechStack";
 import { loadPortfolioData } from "@/lib/github";
 
 /**
- * Incremental static regeneration: the rendered page is reused for five
- * minutes, then rebuilt in the background on the next request. Combined with
- * the process-local cache in lib/cache/store.ts and the webhook in
- * app/api/github/webhook, GitHub is contacted rarely and the page is never
- * waiting on it.
+ * Composed once at build time.
+ *
+ * `loadPortfolioData()` runs during `next build`, so the exported HTML ships
+ * with real repositories, real commit subjects and real counts — a crawler and
+ * a first paint both get content, not a loading state.
+ *
+ * From there `LiveDataProvider` takes over in the browser and re-reads GitHub
+ * directly, which is what keeps the page current between the scheduled
+ * rebuilds. See lib/github/browser.ts.
  */
-export const revalidate = 300;
-
 export default async function HomePage() {
-  // One call, three upstream requests settled independently. GitHub being down
-  // degrades individual sections; it never fails the page.
+  // Three upstream requests, settled independently: GitHub failing on one
+  // resource degrades that section rather than failing the build.
   const data = await loadPortfolioData();
 
   return (
-    <>
+    <LiveDataProvider
+      initialProjects={data.projects}
+      initialStats={data.stats}
+      builtAt={data.meta.syncedAt}
+    >
       <SectionProgress />
 
-      <Hero stats={data.stats} meta={data.meta} />
+      <Hero />
 
-      <StickyShowcase projects={data.flagship} />
+      <StickyShowcase />
 
-      <ProjectExplorer initialProjects={data.projects} />
+      <ProjectExplorer />
 
-      <GitHubSection
-        stats={data.stats}
-        activity={data.activity}
-        currentFocus={data.currentFocus}
-        meta={data.meta}
-      />
+      <GitHubSection activity={data.activity} />
 
       <TechStack groups={data.technologies} />
 
@@ -54,8 +56,7 @@ export default async function HomePage() {
        * education, links) or directly verifiable — no invented job titles,
        * employers or awards.
        *
-       * `application/ld+json` is never executed, so the nonce CSP in
-       * middleware.ts does not block it.
+       * `application/ld+json` is never executed, so the CSP does not block it.
        */}
       <script
         type="application/ld+json"
@@ -67,7 +68,7 @@ export default async function HomePage() {
             alternateName: profile.short,
             description: profile.positioning,
             email: profile.links.email,
-            url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://sarveshchonde.dev",
+            url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://chsrvyt.github.io",
             sameAs: [profile.links.github, profile.links.linkedin],
             address: {
               "@type": "PostalAddress",
@@ -89,6 +90,6 @@ export default async function HomePage() {
           }),
         }}
       />
-    </>
+    </LiveDataProvider>
   );
 }

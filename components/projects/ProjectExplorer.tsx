@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useLiveData } from "@/components/github/LiveDataProvider";
 import { ProjectCard } from "@/components/projects/ProjectCard";
 import { Section } from "@/components/ui/Section";
 import { useGsap } from "@/lib/animations/context";
 import { restageGrid, revealProjectGrid } from "@/lib/animations/projects";
 import { FILTERS } from "@/lib/github/categorize";
-import type { ApiEnvelope, PortfolioProject, ProjectCategory } from "@/lib/github/types";
+import type { PortfolioProject, ProjectCategory } from "@/lib/github/types";
 import { cn } from "@/lib/utils/cn";
 
 type Sort = "recent" | "stars" | "name";
@@ -20,17 +21,13 @@ const SORTS: Array<{ id: Sort; label: string }> = [
 /**
  * Searchable, filterable index of every public repository.
  *
- * Seeded with server-rendered data so the list is present in the HTML (good
- * for SEO and for the first paint), then refreshed from the internal API on an
- * interval. Filtering runs client-side against the full set — it is at most a
- * few dozen records, so a round-trip per keystroke would be strictly worse.
+ * The repository list comes from LiveDataProvider: baked into the HTML at
+ * build time, then refreshed once from GitHub after hydration. Filtering runs
+ * client-side against the full set — it is at most a few dozen records, so a
+ * round-trip per keystroke would be strictly worse.
  */
-export function ProjectExplorer({
-  initialProjects,
-}: {
-  initialProjects: PortfolioProject[];
-}) {
-  const [projects, setProjects] = useState(initialProjects);
+export function ProjectExplorer() {
+  const { projects } = useLiveData();
   const [category, setCategory] = useState<ProjectCategory | "all">("all");
   const [language, setLanguage] = useState<string>("all");
   const [sort, setSort] = useState<Sort>("recent");
@@ -38,34 +35,6 @@ export function ProjectExplorer({
 
   const gridRef = useRef<HTMLDivElement>(null);
   const firstRender = useRef(true);
-
-  // Keep the list current without a page reload. The route is cached upstream,
-  // so this is cheap and never hits GitHub directly.
-  useEffect(() => {
-    const controller = new AbortController();
-
-    const refresh = async () => {
-      try {
-        const response = await fetch("/api/github/repos", {
-          signal: controller.signal,
-          headers: { Accept: "application/json" },
-        });
-        if (!response.ok) return;
-        const payload = (await response.json()) as ApiEnvelope<PortfolioProject[]>;
-        if (Array.isArray(payload.data) && payload.data.length > 0) {
-          setProjects(payload.data);
-        }
-      } catch {
-        // Offline or aborted — the server-rendered list stays on screen.
-      }
-    };
-
-    const id = window.setInterval(refresh, 5 * 60_000);
-    return () => {
-      controller.abort();
-      window.clearInterval(id);
-    };
-  }, []);
 
   const languages = useMemo(() => {
     const counts = new Map<string, number>();

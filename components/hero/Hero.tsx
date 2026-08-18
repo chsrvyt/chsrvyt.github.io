@@ -2,6 +2,7 @@
 
 import { useRef } from "react";
 import { profile } from "@/data/profile";
+import { useLiveData } from "@/components/github/LiveDataProvider";
 import { useBooted } from "@/components/motion/MotionProvider";
 import { ActionLink } from "@/components/ui/ActionLink";
 import { RelativeTime } from "@/components/ui/RelativeTime";
@@ -11,7 +12,7 @@ import {
   createHeroParallax,
   createHeroTimeline,
 } from "@/lib/animations/hero";
-import type { GitHubStats, SyncMeta } from "@/lib/github/types";
+
 
 /**
  * Hero — the site's strongest motion moment.
@@ -24,13 +25,8 @@ import type { GitHubStats, SyncMeta } from "@/lib/github/types";
  * unreachable it says so — it never renders a decorative "ONLINE" state that
  * isn't backed by a successful fetch.
  */
-export function Hero({
-  stats,
-  meta,
-}: {
-  stats: GitHubStats | null;
-  meta: SyncMeta;
-}) {
+export function Hero() {
+  const { stats, meta } = useLiveData();
   const rootRef = useRef<HTMLElement>(null);
   const booted = useBooted();
 
